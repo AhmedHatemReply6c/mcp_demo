@@ -117,3 +117,24 @@ implementors **SHOULD**:
 4. Follow security best practices in their integrations
 5. Consider privacy implications in their feature designs
 
+An example of a simple MCP server that exposes a calculator tool and some data:
+
+# server.py
+from mcp.server.fastmcp import FastMCP
+
+# Create an MCP server
+mcp = FastMCP("Demo")
+
+
+# Add an addition tool
+@mcp.tool()
+def add(a: int, b: int) -> int:
+    """Add two numbers"""
+    return a + b
+
+
+# Add a dynamic greeting resource
+@mcp.resource("greeting://{name}")
+def get_greeting(name: str) -> str:
+    """Get a personalized greeting"""
+    return f"Hello, {name}!"

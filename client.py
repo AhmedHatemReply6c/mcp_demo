@@ -1,74 +1,81 @@
 import asyncio
 from pathlib import Path
 
-from langchain_community.llms import Ollama
 from fastmcp import Client
 from fastmcp.client.transports import PythonStdioTransport
-from langchain.tools import tool
-from langchain.agents import initialize_agent
-from langchain.prompts import PromptTemplate
 
-# read the snippet at startup
+from langchain_core.tools import tool                     
+from langgraph.prebuilt import create_react_agent
+from langchain.chat_models import init_chat_model
+
+# ────────────────────────────────────────
+# 1. Static resources
+# ────────────────────────────────────────
 DOC_PATH = Path(__file__).parent / "mcp_documentation.txt"
-MCP_DOC = DOC_PATH.read_text(encoding="utf-8").strip()
+MCP_DOC  = DOC_PATH.read_text(encoding="utf-8").strip()
 
-# 1) Define your system‐level prefix and a suffix template
-PREFIX = """\
+SYSTEM_PROMPT = """
 You are an assistant expert in the MCP framework.
-MCP is an open protocol that enables seamless integration between LLM applications and external data sources and tools
-Use the MCP documentation to answer any user questions about MCP's concepts, APIs or usage.  
-If the user asks you to generate code, ALWAYS delegate to the `generate_code` tool (which routes to a specialized coding server) rather than writing code yourself.\
+MCP is an open protocol that enables seamless integration between LLM applications and external data sources and tools.
+Use the MCP documentation to answer any user questions about MCP's concepts, APIs or usage.
+If the user asks you to generate code, ALWAYS delegate the request to the `generate_code` tool.
+Only call one tool and return an answer to the user.
 """
 
-SUFFIX = """\
-User's question:
-{input}
+# ────────────────────────────────────────
+# 2. Tool definitions
+# ────────────────────────────────────────
+@tool
+async def get_doc(query: str) -> str:
+    """Return the full MCP documentation."""
+    print(query)
+    return MCP_DOC
 
-{format_instructions}  ← be sure to call the right tool above
+@tool
+async def generate_code(query: str) -> str:
+    """
+    Route the request to a specialised coding agent that produces
+    high-quality MCP framework code.
+    """
+    result = await mcp_client.call_tool("generate_mcp_code", {"query": query})
+    return result[0].text                      # FastMCP responses are Message objects
 
-Response:
-"""
+TOOLS = [get_doc, generate_code]
 
-# 2) Combine into one PromptTemplate that LangChain’s zero-shot agent will use
-prompt = PromptTemplate(
-    input_variables=["input", "format_instructions"],
-    template=PREFIX + "\n\n" + SUFFIX,
-)
 
-async def main():
-    async with Client(PythonStdioTransport("server.py")) as mcp_client:
-        llm = Ollama(model="mistral")
+async def main() -> None:
+    # Spin up the FastMCP transport
+    async with Client(PythonStdioTransport("server.py")) as client:
+        global mcp_client
+        mcp_client = client
 
-        @tool
-        async def get_doc(query: str) -> str:
-            """Returns the MCP documentation."""
-            return MCP_DOC
+        # Create the chat model (local Ollama mistral)
+        llm = init_chat_model("ollama:qwen3:1.7b", temperature=0.3)
 
-        @tool
-        async def generate_code(query: str) -> str:
-            """Routes to a specialized coding agent that generates high-quality MCP code."""
-            result = await mcp_client.call_tool("generate_mcp_code", {"query": query})
-            print("CODE AGENT OUTPUT " , result)
-            return result[0].text
-
-        tools = [get_doc, generate_code]
-
-        agent = initialize_agent(
-            tools,
-            llm,
-            agent="zero-shot-react-description",
-            agent_kwargs={"prompt": prompt},
-            verbose=True,
-            handle_parsing_errors=True,
+        # Assemble the ReAct agent graph
+        agent = create_react_agent(
+            model=llm,
+            tools=TOOLS,
+            prompt=SYSTEM_PROMPT,
         )
 
         while True:
-            query = input("\n❓ Ask about MCP or request code (or 'exit'): ")
-            if query.lower() in {"exit", "quit"}:
+            query = input("\n❓  Ask about MCP or request code (type 'exit' to quit): ")
+            if query.strip().lower() in {"exit", "quit"}:
                 break
-            response = await agent.ainvoke(query)
-            print("\n💬", response)
-            print("\n💬", response["output"])
 
+            # LangGraph accepts the whole message list; for single-turn queries
+            # we pass just the latest HumanMessage.
+  
+            #last_message = response_state["messages"][-1].content
+            async for node_update in agent.astream(
+                    {"messages": [{"role": "user", "content": query}]},
+                    stream_mode="updates"          # or ["updates","messages"] for both
+            ):
+                node, payload = next(iter(node_update.items()))
+                for msg in payload["messages"]:
+                    msg.pretty_print()             # nicely formatted Thought / Tool calls
+
+            print("─" * 40)
 if __name__ == "__main__":
     asyncio.run(main())

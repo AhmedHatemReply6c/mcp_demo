@@ -4,7 +4,6 @@ from langchain_community.llms import Ollama
 
 mcp = FastMCP("code-generation")
 
-# use a beefy model here
 code_llm = Ollama(model="mistral")
 
 @mcp.tool()

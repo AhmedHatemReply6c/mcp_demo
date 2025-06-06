@@ -1,71 +1,136 @@
 import asyncio
-from pathlib import Path
 
-from fastmcp import Client
-from fastmcp.client.transports import PythonStdioTransport
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
 
-from langchain_core.tools import tool                     
+from langchain_ollama import ChatOllama
+
 from langgraph.prebuilt import create_react_agent
-from langchain.chat_models import init_chat_model
+from langchain_mcp_adapters.tools import load_mcp_tools
 
 
-DOC_PATH = Path(__file__).parent / "mcp_documentation.txt"
-MCP_DOC  = DOC_PATH.read_text(encoding="utf-8").strip()
+server_params = StdioServerParameters(
+    command="python",
+    # Make sure to update to the full absolute path to your math_server.py file
+    args=["server.py"],
+)
 
-SYSTEM_PROMPT = """
-You are an assistant expert in the MCP framework.
-MCP is an open protocol that enables seamless integration between LLM applications and external data sources and tools.
-Use the MCP documentation to answer any user questions about MCP's concepts, APIs or usage.
-If the user asks you to generate code, ALWAYS delegate the request to the `generate_code` tool.
-Only call one tool and return an answer to the user.
+# # https://smith.langchain.com/hub/hwchase17/react
+# SYSTEM_PROMPT = """
+# Answer the following questions as best you can. You have access to the following tools:
+
+# {tools}
+
+# Use the following format:
+
+# Question: the input question you must answer
+# Thought: you should always think about what to do
+# Action: the action to take, should be one of [{tool_names}]
+# Action Input: the input to the action
+# Observation: the result of the action
+# ... (this Thought/Action/Action Input/Observation can repeat N times)
+# Thought: I now know the final answer
+# Final Answer: the final answer to the original input question
+
+# Begin!
+
+# Question: {input}
+# Thought:{agent_scratchpad}
+# """
+
+SYSTEM_PROMPT = """\
+You are designed to help with a variety of tasks, from answering questions to providing summaries to other types of analyses.
+
+## Tools
+
+You have access to a wide variety of tools. You are responsible for using the tools in any sequence you deem appropriate to complete the task at hand.
+This may require breaking the task into subtasks and using different tools to complete each subtask.
+
+You have access to the following tools:
+{tools}
+
+
+## Output Format
+
+Please answer in the same language as the question and use the following format:
+
+```
+<think>
+The current language of the user is: (user's language). I need to use a tool to help me answer the question.
+</think>
+Action: tool name (one of {tool_names}) if using a tool.
+Action Input: the input to the tool, in a JSON format representing the kwargs (e.g. {{"input": "hello world", "num_beams": 5}})
+```
+
+Please ALWAYS start with a Thought in the <thinking> tags.
+
+NEVER surround your response with markdown code markers. You may use code markers within your response if you need to.
+
+Please use a valid JSON format for the Action Input. Do NOT do this {{'input': 'hello world', 'num_beams': 5}}.
+
+If this format is used, the tool will respond in the following format:
+
+```
+Observation: tool response
+```
+
+You should keep repeating the above format till you have enough information to answer the question without using any more tools. At that point, you MUST respond in one of the following two formats:
+
+```
+<think>
+I can answer without using any more tools. I'll use the user's language to answer.
+</think>
+[your answer here (In the same language as the user's question)]
+```
+
+```
+<think>
+I cannot answer the question with the provided tools.
+</think>
+[your answer here (In the same language as the user's question)]
+```
+
+## Current Conversation
+
+Below is the current conversation consisting of interleaving human and assistant messages.
+
+Question: {input}
+Thought:{agent_scratchpad}
 """
 
 
-@tool
-async def get_doc(query: str) -> str:
-    """Return the full MCP documentation."""
-    print(query)
-    return MCP_DOC
-
-@tool
-async def generate_code(query: str) -> str:
-    """
-    Route the request to a specialised coding agent that produces
-    high-quality MCP framework code.
-    """
-    result = await mcp_client.call_tool("generate_mcp_code", {"query": query})
-    return result[0].text
-
-TOOLS = [get_doc, generate_code]
-
-
 async def main() -> None:
-    async with Client(PythonStdioTransport("server.py")) as client:
-        global mcp_client
-        mcp_client = client
+    async with stdio_client(server_params) as (read, write):
+        async with ClientSession(read, write) as session:
+            # Initialize the connection
+            await session.initialize()
 
-        llm = init_chat_model("ollama:qwen3:1.7b", temperature=0.3)
+            tools = await load_mcp_tools(session)
 
-        agent = create_react_agent(
-            model=llm,
-            tools=TOOLS,
-            prompt=SYSTEM_PROMPT,
-        )
+            llm = ChatOllama(model="qwen3:1.7b", temperature=0.3)
 
-        while True:
-            query = input("\n❓  Ask about MCP or request code (type 'exit' to quit): ")
-            if query.strip().lower() in {"exit", "quit"}:
-                break
+            graph = create_react_agent(
+                model=llm, tools=tools, prompt=SYSTEM_PROMPT, debug=True
+            )
 
+            while True:
+                query = input(
+                    "\n❓  Ask about MCP or request code (type 'exit' to quit): "
+                )
+                if query.strip().lower() in ["exit"]:
+                    break
 
-            async for node_update in agent.astream(
+                async for node_update in graph.astream(
                     {"messages": [{"role": "user", "content": query}]},
-                    stream_mode="updates"
-            ):
-                node, payload = next(iter(node_update.items()))
-                for msg in payload["messages"]:
-                    msg.pretty_print()
+                    stream_mode="updates",
+                    debug=True,
+                ):
+                    node, payload = next(iter(node_update.items()))
+                    for msg in payload["messages"]:
+                        msg.pretty_print()
 
-            print("─" * 40)
+                print("─" * 40)
+
+
 if __name__ == "__main__":
     asyncio.run(main())

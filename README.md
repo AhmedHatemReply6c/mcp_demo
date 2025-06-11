@@ -1,33 +1,19 @@
 # MCP Demo
 ## Quickstart
-* Put the models to be used in ollama/models.txt
+* Put the model names you would like your client and server to use in ollama/models.txt like such
 ```bash
 qwen3:1.7b
 mistral:latest
 ```
+* In the docker compose file "docker-compose.yml", change the environment variable MODEL_NAME for the client and the server to be the models you would like each of them them to use.
 * Run the docker containers
 ```bash
-Docker compose up
+docker compose up
 ```
-* Run the client application by connection to a shell on the client container
+* Wait for the ollama container to pull the models you specified. It will log "All models are ready" once it is done.
+* then run the client application by connection to a shell on the client container
 ```bash
 python client.py
-```
-
-## How to get started
-* Download and install Ollama from the [official website](https://ollama.com)
-* Make sure it's running by testing it with a tiny model (92 MB)
-```bash
-ollama run smollm:135m Write a 'Hello World' program in python!
-```
-* Download some larger models necessary for the demo to run
-```bash
-ollama pull qwen3:1.7b # 1.4GB
-ollama pull mistral:7b # 4.1GB
-```
-* Run the `client.py` which in turn runs the `server.py`
-```bash
-uv run client.py
 ```
 * Now you should see an input fiels stating: `❓  Ask about MCP or request code (type 'exit' to quit):`
 * If you now type `What is MCP about?` the model will answer accordingly:

@@ -1,0 +1,4 @@
+mcp[cli]>=1.6.0
+langgraph
+langchain-ollama
+langchain-mcp-adapters

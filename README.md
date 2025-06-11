@@ -1,13 +1,17 @@
 # MCP Demo
 ## Quickstart
-* Download the following ollama models: `qwen3:1.7b`, `mistral:latest`
+* Put the models to be used in ollama/models.txt
 ```bash
-ollama pull qwen3:1.7b
-ollama pull mistral:latest
+qwen3:1.7b
+mistral:latest
 ```
-* Run the client application 
+* Run the docker containers
 ```bash
-uv run client.py
+Docker compose up
+```
+* Run the client application by connection to a shell on the client container
+```bash
+python client.py
 ```
 
 ## How to get started

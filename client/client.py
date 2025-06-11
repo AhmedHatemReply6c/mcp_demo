@@ -1,7 +1,8 @@
 import asyncio
+import os
 
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from mcp import ClientSession
+from mcp.client.sse import sse_client
 
 from langchain_ollama import ChatOllama
 
@@ -9,34 +10,8 @@ from langgraph.prebuilt import create_react_agent
 from langchain_mcp_adapters.tools import load_mcp_tools
 
 
-server_params = StdioServerParameters(
-    command="python",
-    # Make sure to update to the full absolute path to your math_server.py file
-    args=["server.py"],
-)
-
-# # https://smith.langchain.com/hub/hwchase17/react
-# SYSTEM_PROMPT = """
-# Answer the following questions as best you can. You have access to the following tools:
-
-# {tools}
-
-# Use the following format:
-
-# Question: the input question you must answer
-# Thought: you should always think about what to do
-# Action: the action to take, should be one of [{tool_names}]
-# Action Input: the input to the action
-# Observation: the result of the action
-# ... (this Thought/Action/Action Input/Observation can repeat N times)
-# Thought: I now know the final answer
-# Final Answer: the final answer to the original input question
-
-# Begin!
-
-# Question: {input}
-# Thought:{agent_scratchpad}
-# """
+SERVER_URL = os.getenv("MCP_SERVER_URL")
+MODEL_NAME = os.getenv("MODEL_NAME")
 
 SYSTEM_PROMPT = """\
 You are designed to help with a variety of tasks, from answering questions to providing summaries to other types of analyses.
@@ -100,14 +75,16 @@ Thought:{agent_scratchpad}
 
 
 async def main() -> None:
-    async with stdio_client(server_params) as (read, write):
-        async with ClientSession(read, write) as session:
+    async with sse_client(url=SERVER_URL) as (read, write):
+        async with ClientSession(
+            read, write
+        ) as session:
             # Initialize the connection
             await session.initialize()
 
             tools = await load_mcp_tools(session)
-
-            llm = ChatOllama(model="qwen3:1.7b", temperature=0.3)
+            print(tools)
+            llm = ChatOllama(model=MODEL_NAME, base_url="http://ollama:11434", temperature=0.3)
 
             graph = create_react_agent(
                 model=llm, tools=tools, prompt=SYSTEM_PROMPT, debug=True

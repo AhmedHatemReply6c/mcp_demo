@@ -1,15 +1,18 @@
 from mcp.server.fastmcp import FastMCP
 from langchain_ollama import OllamaLLM
 from pathlib import Path
+import os
 
-mcp = FastMCP("code-generation")
+MODEL_NAME = os.getenv("MODEL_NAME")
 
-code_llm = OllamaLLM(model="mistral")
+mcp = FastMCP(name="code-generation", host="0.0.0.0")
 
-DOC_PATH = Path(__file__).parent / "mcp_documentation.txt"
+code_llm = OllamaLLM(model=MODEL_NAME,base_url="http://ollama:11434")
+
+DOC_PATH = Path("mcp_documentation.txt")
 MCP_DOC = DOC_PATH.read_text(encoding="utf-8").strip()
 
-DOC_PATH = Path(__file__).parent / "llms-full.txt"
+DOC_PATH = Path("llms-full.txt")
 MCP_LLMS_FULL_DOC = DOC_PATH.read_text(encoding="utf-8").strip()
 
 
@@ -42,8 +45,11 @@ async def generate_mcp_server_code(query: str) -> str:
     Align with the 'Implementation example' from the documentation!
     """
     code = await code_llm.ainvoke(input=prompt)
-    return code[0]
+
+
+    return code
 
 
 if __name__ == "__main__":
-    mcp.run(transport="stdio")
+
+    mcp.run(transport="sse")

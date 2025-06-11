@@ -1,0 +1,4 @@
+fastmcp[sse]>=2.7.0
+langchain-ollama
+uvicorn
+fastapi

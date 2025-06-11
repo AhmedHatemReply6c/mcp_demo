@@ -1,0 +1,40 @@
+version: "3.9"
+
+services:
+
+  ollama:
+    build: ./ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    environment:
+      - OLLAMA_LOAD_TIMEOUT=10m
+
+  server:
+    build: ./server
+    restart: unless-stopped
+    environment:
+      - MCP_PORT=8000
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - MODEL_NAME=qwen3:1.7b
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./server:/app
+
+
+  client:
+    build: ./client
+    depends_on:
+      ollama:
+        condition: service_started
+    stdin_open: true
+    tty: true
+    environment:
+      - MCP_SERVER_URL=http://server:8000/sse
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - MODEL_NAME=qwen3:1.7b
+
+volumes:
+  ollama-data:

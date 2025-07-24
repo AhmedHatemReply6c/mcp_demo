@@ -10,5 +10,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY client.py .
 
-
-#ENTRYPOINT ["python", "client.py"]
+ENTRYPOINT ["tail", "-f", "/dev/null"]

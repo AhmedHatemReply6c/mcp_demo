@@ -9,7 +9,7 @@ while [ "$(ollama list | grep 'NAME')" == "" ]; do
   sleep 1
 done
 
-MODELS=${OLLAMA_MODELS:-$(tr '\n' ' ' < /models.txt)}
+MODELS=${PREPULL_MODELS:-$(tr '\n' ' ' < /models.txt)}
 
 echo "[entrypoint] Pre-pulling models: $MODELS"
 

@@ -1,36 +1,35 @@
-version: "3.9"
-
 services:
 
   ollama:
     build: ./ollama
-    ports:
-      - "11434:11434"
     volumes:
       - ollama-data:/root/.ollama
     environment:
       - OLLAMA_LOAD_TIMEOUT=10m
+      - PREPULL_MODELS=qwen3:1.7b # Alternative to `models.txt` (overwriting it)
+      - OLLAMA_CONTEXT_LENGTH=16384
+    healthcheck:
+      test: [ "CMD", "/readiness_check.sh" ]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 10s
 
   server:
     build: ./server
-    restart: unless-stopped
+    depends_on:
+      ollama:
+        condition: service_healthy
     environment:
       - MCP_PORT=8000
       - OLLAMA_BASE_URL=http://ollama:11434
       - MODEL_NAME=qwen3:1.7b
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./server:/app
-
 
   client:
     build: ./client
     depends_on:
       ollama:
-        condition: service_started
-    stdin_open: true
-    tty: true
+        condition: service_healthy
     environment:
       - MCP_SERVER_URL=http://server:8000/sse
       - OLLAMA_BASE_URL=http://ollama:11434

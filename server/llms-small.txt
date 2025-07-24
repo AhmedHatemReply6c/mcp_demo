@@ -1,0 +1,818 @@
+# Model Context Protocol (MCP): Comprehensive Implementation Guide
+
+## Introduction to Model Context Protocol
+
+The Model Context Protocol (MCP) establishes a standardized communication framework between AI applications and external data sources or tools. This comprehensive guide focuses on implementation details across different programming languages and architectures, going beyond a simple overview to provide practical insights for developers.
+
+MCP follows a client-server architecture where:
+- **Hosts** are applications that integrate with language models
+- **Clients** maintain connections with servers, acting as intermediaries
+- **Servers** expose context, tools, and prompts to enhance AI capabilities
+
+This protocol creates clear security boundaries while enabling rich AI interactions with external systems - empowering AI applications to access contextual information and perform actions without requiring direct API access.
+
+## Core MCP Protocol Components
+
+### 1. Message Structure and Transport
+
+MCP uses JSON-RPC 2.0 for message exchange, with three primary message types:
+
+**Requests:**
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "request-123",
+  "method": "resources/list",
+  "params": { /* optional parameters */ }
+}
+```
+
+**Responses:**
+```json
+{
+  "jsonrpc": "2.0", 
+  "id": "request-123",
+  "result": { /* response data */ }
+}
+```
+
+**Notifications:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "notifications/resources/updated",
+  "params": { /* notification data */ }
+}
+```
+
+MCP supports two primary transport mechanisms:
+
+1. **STDIO Transport**: Uses standard input/output streams for process-to-process communication, ideal for local applications.
+2. **Streamable HTTP Transport**: Uses HTTP requests with Server-Sent Events (SSE) for remote communication, supporting both one-way and bi-directional messaging patterns.
+
+### 2. Connection Lifecycle
+
+Every MCP connection follows a structured lifecycle:
+
+1. **Initialization Phase**:
+   - Client sends `initialize` request with supported protocol version and capabilities
+   - Server responds with its supported version and capabilities
+   - Client sends `initialized` notification to complete setup
+
+2. **Operation Phase**:
+   - Normal message exchange according to negotiated capabilities
+   - Request/response pairs for operations
+   - Notifications for updates and events
+
+3. **Termination Phase**:
+   - Connection closed using transport-specific mechanisms
+   - Resources cleaned up appropriately
+
+### 3. Capability Negotiation
+
+Capabilities are explicitly declared during initialization to establish available features. Common capabilities include:
+
+**Client Capabilities:**
+- `roots`: Ability to provide filesystem access boundaries
+- `sampling`: Support for language model generation requests
+- `elicitation`: Support for gathering user input during interactions
+
+**Server Capabilities:**
+- `resources`: Exposing contextual data to clients
+- `tools`: Providing executable functions to clients
+- `prompts`: Offering templates for structured interactions
+- `logging`: Emitting structured log messages to clients
+
+## Implementing MCP Clients in Different Languages
+
+### Python Implementation
+
+Python offers a robust SDK for implementing MCP clients and servers. Here's how to get started:
+
+#### Installation and Setup
+
+```bash
+pip install mcp
+# Or for more components:
+pip install "mcp[cli]"
+```
+
+#### Basic Client Implementation
+
+```python
+import asyncio
+from mcp.client import ClientSession
+from mcp.client.stdio import stdio_client
+
+async def main():
+    # Connect to an MCP server via stdio
+    server_params = StdioServerParameters(
+        command="mcp-server",
+        args=["--option", "value"]
+    )
+    
+    async with stdio_client(server_params) as streams:
+        async with ClientSession(streams[0], streams[1]) as session:
+            # Initialize the connection
+            await session.initialize()
+            
+            # List available tools
+            tools_result = await session.list_tools()
+            print(f"Available tools: {[tool.name for tool in tools_result.tools]}")
+            
+            # Call a tool
+            tool_result = await session.call_tool("calculator", {"operation": "add", "a": 5, "b": 3})
+            print(f"Result: {tool_result.content[0].text}")
+            
+            # List resources
+            resources_result = await session.list_resources()
+            print(f"Available resources: {[res.name for res in resources_result.resources]}")
+            
+            # Read a resource
+            if resources_result.resources:
+                resource_uri = resources_result.resources[0].uri
+                read_result = await session.read_resource(resource_uri)
+                print(f"Resource content: {read_result.contents[0].text}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+#### Error Handling in Python
+
+Robust error handling is essential in MCP clients:
+
+```python
+from mcp.types import McpError
+
+async def safe_tool_call(session, tool_name, arguments):
+    try:
+        return await session.call_tool(tool_name, arguments)
+    except McpError as e:
+        print(f"MCP protocol error: {e.code} - {e.message}")
+        # Handle specific error codes
+        if e.code == -32601:
+            print("Tool not found")
+        elif e.code == -32602:
+            print("Invalid parameters")
+        else:
+            print(f"Other error: {e.data}")
+        return None
+    except asyncio.TimeoutError:
+        print("Tool call timed out")
+        return None
+    except Exception as e:
+        print(f"Unexpected error: {str(e)}")
+        return None
+```
+
+#### Advanced Client Features: Sampling
+
+For leveraging language models through client sampling:
+
+```python
+async def perform_sampling(session, user_query):
+    """Request LLM sampling through the client"""
+    
+    # Ensure client has sampling capability
+    if not session.client_capabilities.sampling:
+        print("Client does not support sampling")
+        return None
+        
+    # Create sampling request
+    sampling_request = {
+        "messages": [
+            {
+                "role": "user",
+                "content": {
+                    "type": "text",
+                    "text": user_query
+                }
+            }
+        ],
+        "modelPreferences": {
+            "hints": [{"name": "claude-3-sonnet"}],
+            "intelligencePriority": 0.8,
+            "speedPriority": 0.5
+        },
+        "maxTokens": 1000
+    }
+    
+    try:
+        result = await session.create_message(sampling_request)
+        return result.content.text if result.content.type == "text" else None
+    except McpError as e:
+        print(f"Sampling error: {e}")
+        return None
+```
+
+### TypeScript/JavaScript Implementation
+
+The TypeScript SDK provides comprehensive support for MCP clients:
+
+#### Installation and Setup
+
+```bash
+npm install @modelcontextprotocol/sdk
+```
+
+#### Basic Client Implementation
+
+```typescript
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+
+async function main() {
+  // Create client instance
+  const client = new Client({
+    name: 'example-client',
+    version: '1.0.0'
+  });
+
+  // Connect to server via stdio
+  const transport = new StdioClientTransport({
+    command: './server',
+    args: ['--option', 'value']
+  });
+  
+  try {
+    await client.connect(transport);
+    
+    // List available tools
+    const toolsResult = await client.listTools();
+    console.log('Available tools:', toolsResult.tools.map(tool => tool.name));
+    
+    // Call a tool
+    const toolResult = await client.callTool({
+      name: 'calculator',
+      arguments: { operation: 'add', a: 5, b: 3 }
+    });
+    console.log('Result:', toolResult.content[0].text);
+    
+    // List resources
+    const resourcesResult = await client.listResources();
+    console.log('Available resources:', resourcesResult.resources.map(res => res.name));
+    
+    // Read a resource
+    if (resourcesResult.resources.length > 0) {
+      const resourceUri = resourcesResult.resources[0].uri;
+      const readResult = await client.readResource({ uri: resourceUri });
+      console.log('Resource content:', readResult.contents[0].text);
+    }
+  } finally {
+    // Cleanup
+    await client.close();
+  }
+}
+
+main().catch(console.error);
+```
+
+#### HTTP Transport Implementation
+
+For web-based clients using HTTP with SSE:
+
+```typescript
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { HttpSseClientTransport } from '@modelcontextprotocol/sdk/client/http-sse.js';
+
+async function createHttpClient() {
+  const client = new Client({
+    name: 'web-client',
+    version: '1.0.0'
+  });
+  
+  const transport = new HttpSseClientTransport({
+    baseUrl: 'https://example.com/mcp',
+    headers: {
+      'Authorization': 'Bearer YOUR_TOKEN'
+    }
+  });
+  
+  await client.connect(transport);
+  return client;
+}
+```
+
+#### Event Handling for Notifications
+
+```typescript
+// Listen for resource changes
+client.on('notifications/resources/updated', notification => {
+  console.log('Resource updated:', notification.params.uri);
+  // Refresh resource content
+  client.readResource({ uri: notification.params.uri })
+    .then(result => {
+      console.log('Updated content:', result);
+      // Update UI or state
+    });
+});
+
+// Listen for tool list changes
+client.on('notifications/tools/list_changed', async () => {
+  console.log('Tool list changed');
+  // Refresh tools list
+  const toolsResult = await client.listTools();
+  console.log('New tools list:', toolsResult.tools.map(tool => tool.name));
+});
+```
+
+### Java Implementation
+
+Java offers a structured approach to MCP implementation with support for both synchronous and asynchronous operations:
+
+#### Maven Setup
+
+```xml
+<dependencies>
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp</artifactId>
+        <version>0.9.0</version>
+    </dependency>
+    
+    <!-- Optional: Spring WebFlux transport support -->
+    <dependency>
+        <groupId>io.modelcontextprotocol.sdk</groupId>
+        <artifactId>mcp-spring-webflux</artifactId>
+        <version>0.9.0</version>
+    </dependency>
+</dependencies>
+```
+
+#### Basic Synchronous Client
+
+```java
+import io.modelcontextprotocol.sdk.client.McpClient;
+import io.modelcontextprotocol.sdk.client.McpSyncClient;
+import io.modelcontextprotocol.sdk.client.transport.StdioClientTransport;
+import io.modelcontextprotocol.sdk.types.*;
+
+import java.util.Map;
+
+public class SyncMcpClientExample {
+
+    public static void main(String[] args) {
+        // Create stdio transport
+        var params = ServerParameters.builder("./mcp-server")
+                .args("--option", "value")
+                .build();
+        var transport = new StdioClientTransport(params);
+        
+        // Create sync client
+        McpSyncClient client = McpClient.sync(transport)
+                .requestTimeout(Duration.ofSeconds(30))
+                .capabilities(ClientCapabilities.builder()
+                        .roots(true)
+                        .sampling()
+                        .build())
+                .build();
+        
+        try {
+            // Initialize connection
+            client.initialize();
+            
+            // List tools
+            ListToolsResult toolsResult = client.listTools();
+            System.out.println("Available tools:");
+            toolsResult.tools().forEach(tool -> 
+                System.out.println("- " + tool.name() + ": " + tool.description()));
+            
+            // Call a tool
+            CallToolResult result = client.callTool(
+                new CallToolRequest("calculator", 
+                    Map.of("operation", "add", "a", 5, "b", 3))
+            );
+            
+            System.out.println("Result: " + 
+                result.content().stream()
+                    .filter(c -> c instanceof TextContent)
+                    .map(c -> ((TextContent) c).text())
+                    .findFirst()
+                    .orElse("No text content"));
+            
+        } catch (McpException e) {
+            System.err.println("MCP Error: " + e.getMessage());
+        } finally {
+            // Clean up
+            client.closeGracefully();
+        }
+    }
+}
+```
+
+#### Asynchronous Client Implementation
+
+```java
+import io.modelcontextprotocol.sdk.client.McpClient;
+import io.modelcontextprotocol.sdk.client.McpAsyncClient;
+import io.modelcontextprotocol.sdk.client.transport.StdioClientTransport;
+import reactor.core.publisher.Mono;
+
+public class AsyncMcpClientExample {
+
+    public static void main(String[] args) {
+        // Create transport
+        var params = ServerParameters.builder("./mcp-server")
+                .args("--option", "value")
+                .build();
+        var transport = new StdioClientTransport(params);
+        
+        // Create async client
+        McpAsyncClient client = McpClient.async(transport)
+                .requestTimeout(Duration.ofSeconds(30))
+                .capabilities(ClientCapabilities.builder()
+                        .roots(true)
+                        .sampling()
+                        .build())
+                .toolsChangeConsumer(tools -> 
+                    Mono.fromRunnable(() -> 
+                        System.out.println("Tools updated: " + tools)))
+                .build();
+        
+        // Initialize and use client
+        client.initialize()
+            .flatMap(initResult -> client.listTools())
+            .flatMap(tools -> {
+                System.out.println("Available tools: " + tools);
+                
+                if (!tools.tools().isEmpty()) {
+                    return client.callTool(new CallToolRequest(
+                        tools.tools().get(0).name(), 
+                        Map.of("parameter", "value")
+                    ));
+                }
+                return Mono.empty();
+            })
+            .doFinally(signal -> client.closeGracefully().subscribe())
+            .block(); // Block for demo purposes
+    }
+}
+```
+
+## Best Practices for MCP Client Implementation
+
+### 1. Connection Lifecycle Management
+
+* **Proper Initialization**: Always complete the full initialization sequence before sending other requests
+* **Graceful Shutdown**: Implement proper connection termination to avoid resource leaks
+* **Reconnection Strategy**: Implement automatic reconnection with exponential backoff for network issues
+* **Timeout Management**: Set appropriate timeouts for all request types
+
+```typescript
+// TypeScript example of connection lifecycle management
+class ManagedMcpClient {
+  private client: Client;
+  private transport: Transport;
+  private connected = false;
+  private reconnectAttempts = 0;
+  private readonly maxReconnectAttempts = 5;
+  private readonly initialReconnectDelay = 1000;
+  
+  constructor(serverCommand: string, serverArgs: string[]) {
+    this.client = new Client({name: 'managed-client', version: '1.0.0'});
+    this.transport = new StdioClientTransport({
+      command: serverCommand,
+      args: serverArgs
+    });
+  }
+  
+  async connect(): Promise<boolean> {
+    try {
+      await this.client.connect(this.transport);
+      this.connected = true;
+      this.reconnectAttempts = 0;
+      console.log('Connected successfully');
+      return true;
+    } catch (e) {
+      console.error('Connection failed:', e);
+      return false;
+    }
+  }
+  
+  async reconnect(): Promise<boolean> {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.error('Max reconnection attempts reached');
+      return false;
+    }
+    
+    this.reconnectAttempts++;
+    const delay = this.initialReconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
+    console.log(`Reconnecting (attempt ${this.reconnectAttempts}) after ${delay}ms`);
+    
+    await new Promise(resolve => setTimeout(resolve, delay));
+    return this.connect();
+  }
+  
+  async close(): Promise<void> {
+    try {
+      await this.client.close();
+      this.connected = false;
+      console.log('Connection closed');
+    } catch (e) {
+      console.error('Error closing connection:', e);
+    }
+  }
+}
+```
+
+### 2. Error Handling Strategies
+
+* **Error Categorization**: Categorize errors into transient (retryable) and permanent failures
+* **Structured Error Handling**: Create domain-specific error types for better handling
+* **Defensive Programming**: Validate all inputs and outputs to catch issues early
+* **Logging**: Implement comprehensive logging for all errors, including request IDs for tracking
+
+```python
+# Python example of structured error handling
+class McpError(Exception):
+    """Base class for MCP errors"""
+    def __init__(self, message, code=None, data=None):
+        super().__init__(message)
+        self.code = code
+        self.data = data
+
+class McpConnectionError(McpError):
+    """Error related to transport connection"""
+    pass
+
+class McpTimeoutError(McpError):
+    """Request timeout error"""
+    pass
+
+class McpServerError(McpError):
+    """Error returned from the server"""
+    pass
+
+class McpClientError(McpError):
+    """Error originating from the client"""
+    pass
+
+async def safe_mcp_operation(operation_func, *args, **kwargs):
+    """Execute MCP operation with structured error handling"""
+    try:
+        return await operation_func(*args, **kwargs)
+    except asyncio.TimeoutError:
+        raise McpTimeoutError(f"Operation timed out: {operation_func.__name__}")
+    except McpError:
+        # Re-raise existing MCP errors
+        raise
+    except ConnectionError as e:
+        raise McpConnectionError(f"Connection failed: {str(e)}")
+    except Exception as e:
+        raise McpClientError(f"Unexpected error: {str(e)}")
+```
+
+### 3. Resource Management
+
+* **Eager Cleanup**: Always release resources in finally blocks or equivalent
+* **Connection Pooling**: For high-throughput applications, implement connection pooling
+* **Resource Subscription Management**: Track active subscriptions and clean them up
+* **Memory Management**: Monitor memory usage, especially when handling large resources
+
+```java
+// Java example of resource management with try-with-resources
+public class ResourceManager implements AutoCloseable {
+    private final McpSyncClient client;
+    private final Set<String> activeSubscriptions = new HashSet<>();
+    
+    public ResourceManager(McpSyncClient client) {
+        this.client = client;
+    }
+    
+    public synchronized void subscribeToResource(String uri) throws McpException {
+        try {
+            client.resourcesSubscribe(new ResourcesSubscribeRequest(uri));
+            activeSubscriptions.add(uri);
+        } catch (Exception e) {
+            throw new McpException("Failed to subscribe to resource", e);
+        }
+    }
+    
+    public synchronized void unsubscribeFromResource(String uri) {
+        try {
+            client.resourcesUnsubscribe(new ResourcesUnsubscribeRequest(uri));
+            activeSubscriptions.remove(uri);
+        } catch (Exception e) {
+            // Log but don't throw to ensure we continue cleanup
+            System.err.println("Failed to unsubscribe from resource: " + e.getMessage());
+        }
+    }
+    
+    @Override
+    public void close() {
+        // Copy to avoid concurrent modification
+        Set<String> subscriptionsCopy = new HashSet<>(activeSubscriptions);
+        for (String uri : subscriptionsCopy) {
+            unsubscribeFromResource(uri);
+        }
+    }
+}
+
+// Usage with try-with-resources
+try (ResourceManager manager = new ResourceManager(client)) {
+    manager.subscribeToResource("file:///example.txt");
+    // Use the resource
+    // Automatic cleanup on exit
+}
+```
+
+### 4. Security Best Practices
+
+* **Input Validation**: Validate all inputs before sending them to servers
+* **Output Sanitization**: Sanitize server responses before presenting them
+* **Least Privilege**: Request only necessary capabilities during initialization
+* **Secure Transport**: Use encrypted transports (TLS) for HTTP connections
+* **Credential Management**: Securely handle and store any credentials
+
+```javascript
+// JavaScript/TypeScript example of input validation
+function validateToolArguments(inputSchema, args) {
+    if (!inputSchema || !inputSchema.properties) {
+        throw new Error('Invalid input schema');
+    }
+    
+    const validationErrors = [];
+    
+    // Check required properties
+    if (inputSchema.required) {
+        for (const requiredProp of inputSchema.required) {
+            if (args[requiredProp] === undefined) {
+                validationErrors.push(`Missing required property: ${requiredProp}`);
+            }
+        }
+    }
+    
+    // Validate property types
+    for (const [propName, propValue] of Object.entries(args)) {
+        const propSchema = inputSchema.properties[propName];
+        if (!propSchema) {
+            validationErrors.push(`Unknown property: ${propName}`);
+            continue;
+        }
+        
+        // Type validation
+        switch (propSchema.type) {
+            case 'string':
+                if (typeof propValue !== 'string') {
+                    validationErrors.push(`${propName} must be a string`);
+                } else if (propSchema.pattern) {
+                    const regex = new RegExp(propSchema.pattern);
+                    if (!regex.test(propValue)) {
+                        validationErrors.push(`${propName} does not match required pattern`);
+                    }
+                }
+                break;
+            case 'number':
+            case 'integer':
+                if (typeof propValue !== 'number') {
+                    validationErrors.push(`${propName} must be a number`);
+                } else if (propSchema.minimum !== undefined && propValue < propSchema.minimum) {
+                    validationErrors.push(`${propName} must be >= ${propSchema.minimum}`);
+                } else if (propSchema.maximum !== undefined && propValue > propSchema.maximum) {
+                    validationErrors.push(`${propName} must be <= ${propSchema.maximum}`);
+                }
+                break;
+            case 'boolean':
+                if (typeof propValue !== 'boolean') {
+                    validationErrors.push(`${propName} must be a boolean`);
+                }
+                break;
+            case 'object':
+                if (typeof propValue !== 'object' || propValue === null || Array.isArray(propValue)) {
+                    validationErrors.push(`${propName} must be an object`);
+                }
+                break;
+            case 'array':
+                if (!Array.isArray(propValue)) {
+                    validationErrors.push(`${propName} must be an array`);
+                }
+                break;
+        }
+    }
+    
+    if (validationErrors.length > 0) {
+        throw new Error(`Validation errors: ${validationErrors.join(', ')}`);
+    }
+    
+    return true;
+}
+```
+
+### 5. Testing MCP Client Implementations
+
+Testing MCP clients requires simulating server behavior in a reliable and reproducible way:
+
+```python
+# Python example using pytest for unit testing
+import pytest
+from unittest.mock import AsyncMock, MagicMock
+from mcp.client import ClientSession
+
+class TestMcpClient:
+    @pytest.fixture
+    def mock_session(self):
+        session = MagicMock(spec=ClientSession)
+        session.initialize = AsyncMock()
+        session.list_tools = AsyncMock()
+        session.call_tool = AsyncMock()
+        return session
+    
+    @pytest.mark.asyncio
+    async def test_initialization(self, mock_session):
+        # Setup
+        mock_session.initialize.return_value = {
+            "protocolVersion": "2025-03-26", 
+            "capabilities": {"tools": {}, "resources": {}}
+        }
+        
+        # Execute
+        init_result = await mock_session.initialize()
+        
+        # Assert
+        assert mock_session.initialize.called
+        assert init_result["protocolVersion"] == "2025-03-26"
+        assert "tools" in init_result["capabilities"]
+    
+    @pytest.mark.asyncio
+    async def test_tool_call(self, mock_session):
+        # Setup
+        mock_session.call_tool.return_value = {
+            "content": [{"type": "text", "text": "8"}],
+            "isError": False
+        }
+        
+        # Execute
+        result = await mock_session.call_tool("calculator", {"operation": "add", "a": 5, "b": 3})
+        
+        # Assert
+        mock_session.call_tool.assert_called_with("calculator", {"operation": "add", "a": 5, "b": 3})
+        assert not result["isError"]
+        assert result["content"][0]["text"] == "8"
+```
+
+### 6. OAuth 2.1 Integration for Remote MCP Servers
+
+For MCP servers that require authentication, implementing OAuth 2.1 integration is essential:
+
+```typescript
+// TypeScript example of OAuth integration for MCP
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { HttpSseClientTransport } from '@modelcontextprotocol/sdk/client/http-sse.js';
+
+class OAuthMcpClient {
+  private client: Client | null = null;
+  private tokenManager: OAuthTokenManager;
+  private serverUrl: string;
+  
+  constructor(serverUrl: string, clientId: string, redirectUri: string) {
+    this.serverUrl = serverUrl;
+    this.tokenManager = new OAuthTokenManager(clientId, redirectUri);
+  }
+  
+  async connect(): Promise<void> {
+    try {
+      // First discover the authorization server from the MCP server
+      const metadataUrl = `${this.serverUrl}/.well-known/oauth-protected-resource`;
+      const metadataResponse = await fetch(metadataUrl);
+      
+      if (!metadataResponse.ok) {
+        throw new Error(`Failed to fetch OAuth metadata: ${metadataResponse.statusText}`);
+      }
+      
+      const metadata = await metadataResponse.json();
+      const authServerUrl = metadata.authorization_servers[0].issuer;
+      
+      // Get token from OAuth flow
+      await this.tokenManager.initialize(authServerUrl);
+      const token = await this.tokenManager.getAccessToken();
+      
+      // Create and connect MCP client with auth token
+      this.client = new Client({
+        name: 'oauth-mcp-client',
+        version: '1.0.0'
+      });
+      
+      const transport = new HttpSseClientTransport({
+        baseUrl: this.serverUrl,
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      await this.client.connect(transport);
+    } catch (error) {
+      console.error('OAuth MCP connection failed:', error);
+      throw error;
+    }
+  }
+}
+```
+
+## Conclusion
+
+Building robust MCP clients requires careful attention to protocol details, error handling, security, and performance considerations. By following the best practices and implementation examples provided in this guide, developers can create reliable clients in their language of choice that seamlessly integrate with the growing MCP ecosystem.
+
+The Model Context Protocol continues to evolve with new features like structured tool outputs, elicitation, and improved authorization flows. Client implementations should be designed with flexibility to accommodate these changes while maintaining backward compatibility.
+
+For the latest updates and detailed reference documentation, always consult the official MCP documentation at [modelcontextprotocol.io](https://modelcontextprotocol.io) and the protocol specification at [modelcontextprotocol.io/specification](https://modelcontextprotocol.io/specification).

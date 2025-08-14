@@ -191,7 +191,7 @@ For implementation examples, see the [MCP documentation](https://modelcontextpro
 ```text
 ────────────────────────────────────────
 
-❓  Ask about MCP or request code (type 'exit' to quit): Now write a server in Python for me using the STDIO protocoll with 2 different tools!
+❓  Ask about MCP or request code (type 'exit' to quit): Now write a server in Python for me using the STDIO protocol with 2 different tools!
 ```
 ```text
 ================================== Ai Message ==================================

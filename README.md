@@ -1,5 +1,10 @@
 # MCP Demo
 
+* An end-to-end MCP demo with an LLM (Large Language Model) as tool to an SLM (Small Language Model)
+![architecture](./docs/diagram.png)
+
+* In the demo we replace the OpenAI model with another SLM to enable users to run the demo without incurring cost / need of a credit card
+
 ## Quickstart
 
 * Put the model names you would like your client and server to use in `ollama/models.txt` like such, that they can be pre-pulled
@@ -57,7 +62,7 @@ The Model Context Protocol (MCP) is an open protocol designed to enable seamless
 For implementation examples, see the [MCP documentation](https://modelcontextprotocol.io).
 ```
 
-* If you now type `Now write a server in Python for me using the STDIO protocoll with 2 different tools!` the model will answer accordingly
+* If you now type `Now write a server in Python for me using the STDIO protocol with 2 different tools!` the model will answer accordingly
 * What the SLM returns finally (it's certainly not perfect - because both models are only SLMs - but it's still demonstrating the capabilities)
 
 ````text
